@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "sprint-analizer"
+version = "0.1.0"
+description = ""
+authors = ["IgorSokolov <is@letsnova.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+streamlit = "^1.51.0"
+pandas = "^2.3.3"
+pypdf = "^6.4.1"
+load-dotenv = "^0.1.0"
+requests = "^2.31"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
