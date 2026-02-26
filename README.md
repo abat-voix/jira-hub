@@ -25,8 +25,6 @@ Streamlit-приложение для анализа спринтов из Jira.
 - Python 3.11+
 - Poetry (рекомендуется) или pip
 
-### С Poetry
-
 ```bash
 # Клонировать репозиторий
 git clone <repo-url>
@@ -37,12 +35,6 @@ poetry install
 
 # Активировать виртуальное окружение
 poetry shell
-```
-
-### С pip
-
-```bash
-pip install streamlit pandas pypdf python-dotenv
 ```
 
 ## ⚙️ Настройка
