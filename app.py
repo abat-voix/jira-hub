@@ -302,7 +302,7 @@ def render_status_breakdown(sprint_data: SprintData):
             expanded=(status in ['В работе', 'In Progress', 'Тестирование', 'Testing'])
         ):
             for issue in data['issues']:
-                c1, c2, c3 = st.columns([1, 4, 2])
+                c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
                 with c1:
                     st.markdown(f"[`{issue.key}`]({issue.url})")
                 with c2:
@@ -319,6 +319,9 @@ def render_status_breakdown(sprint_data: SprintData):
                         st.markdown(f"{hours_info}<br>🚫 *Не назначен*", unsafe_allow_html=True)
                     else:
                         st.markdown(f"{hours_info}<br>👤 {assignee}", unsafe_allow_html=True)
+                with c4:
+                    comp = ', '.join(issue.components) if issue.components else '—'
+                    st.markdown(f"🧩 {comp}")
 
 
 def render_assignee_stats(sprint_data: SprintData):
@@ -327,7 +330,7 @@ def render_assignee_stats(sprint_data: SprintData):
     for issue in sprint_data.issues:
         a = issue.assignee
         if a not in by_assignee:
-            by_assignee[a] = {'count': 0, 'estimated': 0, 'spent': 0, 'statuses': {}}
+            by_assignee[a] = {'count': 0, 'estimated': 0, 'spent': 0, 'statuses': {}, 'components': set()}
         by_assignee[a]['count'] += 1
         by_assignee[a]['estimated'] += issue.estimated_hours or 0
         by_assignee[a]['spent'] += issue.spent_hours or 0
@@ -335,16 +338,19 @@ def render_assignee_stats(sprint_data: SprintData):
         if s not in by_assignee[a]['statuses']:
             by_assignee[a]['statuses'][s] = 0
         by_assignee[a]['statuses'][s] += 1
+        by_assignee[a]['components'].update(issue.components)
 
     rows = []
     for assignee, data in by_assignee.items():
         status_str = ', '.join([f"{k}: {v}" for k, v in data['statuses'].items()])
+        comp_str = ', '.join(sorted(data['components'])) if data['components'] else '—'
         rows.append({
             'Исполнитель': assignee,
             'Задач': data['count'],
             'Оценка (ч)': f"{data['estimated']:.0f}",
             'Залогировано (ч)': f"{data['spent']:.1f}",
             'Остаток (ч)': f"{data['estimated'] - data['spent']:.1f}",
+            'Компоненты': comp_str,
             'Статусы': status_str
         })
 
@@ -355,6 +361,7 @@ def render_assignee_stats(sprint_data: SprintData):
         'Оценка (ч)': st.column_config.TextColumn('Оценка', width='small'),
         'Залогировано (ч)': st.column_config.TextColumn('Залог.', width='small'),
         'Остаток (ч)': st.column_config.TextColumn('Остаток', width='small'),
+        'Компоненты': st.column_config.TextColumn('Компоненты', width='medium'),
         'Статусы': st.column_config.TextColumn('Статусы', width='large'),
     })
 
@@ -363,10 +370,11 @@ def render_all_issues_table(sprint_data: SprintData):
     st.markdown("### 📁 Все задачи")
     issues = sprint_data.issues
 
-    fcol1, fcol2, fcol3 = st.columns(3)
+    fcol1, fcol2, fcol3, fcol4 = st.columns(4)
     statuses = sorted(set(i.status for i in issues))
     assignees = sorted(set(i.assignee for i in issues))
     types = sorted(set(i.issue_type for i in issues))
+    all_comps = sorted(set(c for i in issues for c in i.components) | ({'—'} if any(not i.components for i in issues) else set()))
 
     with fcol1:
         status_filter = st.multiselect("Статус", options=statuses, default=statuses)
@@ -374,13 +382,22 @@ def render_all_issues_table(sprint_data: SprintData):
         assignee_filter = st.multiselect("Исполнитель", options=assignees, default=assignees)
     with fcol3:
         type_filter = st.multiselect("Тип", options=types, default=types)
+    with fcol4:
+        component_filter = st.multiselect("Компонент", options=all_comps, default=all_comps)
+
+    def comp_matches(issue):
+        if not issue.components:
+            return '—' in component_filter
+        return any(c in component_filter for c in issue.components)
 
     filtered = [i for i in issues
-                if i.status in status_filter and i.assignee in assignee_filter and i.issue_type in type_filter]
+                if i.status in status_filter and i.assignee in assignee_filter
+                and i.issue_type in type_filter and comp_matches(i)]
 
     rows = [{
         'Ключ': i.key, 'Тип': i.issue_type, 'Название': i.summary,
         'Статус': i.status, 'Исполнитель': i.assignee,
+        'Компонент': ', '.join(i.components) if i.components else '—',
         'Оценка (ч)': i.estimated_hours or 0, 'Залогировано (ч)': i.spent_hours or 0,
         'Приоритет': i.priority
     } for i in filtered]
@@ -392,6 +409,7 @@ def render_all_issues_table(sprint_data: SprintData):
         'Название': st.column_config.TextColumn('Название', width='large'),
         'Статус': st.column_config.TextColumn('Статус', width='medium'),
         'Исполнитель': st.column_config.TextColumn('Исполнитель', width='medium'),
+        'Компонент': st.column_config.TextColumn('Компонент', width='medium'),
         'Оценка (ч)': st.column_config.NumberColumn('Оценка', format="%.0f", width='small'),
         'Залогировано (ч)': st.column_config.NumberColumn('Залог.', format="%.1f", width='small'),
         'Приоритет': st.column_config.TextColumn('Приоритет', width='small'),
