@@ -12,6 +12,7 @@ pandas = "^2.3.3"
 pypdf = "^6.4.1"
 load-dotenv = "^0.1.0"
 requests = "^2.31"
+groq = "^0.25"
 
 
 [build-system]
