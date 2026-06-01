@@ -14,7 +14,7 @@ Streamlit-приложение для анализа спринтов из Jira.
 - **Фильтрация** задач по статусу, исполнителю и типу
 
 ### ➕ Создание задач
-- **AI-генерация задач** — опишите задачи текстом, Groq LLM сформирует JSON
+- **AI-генерация задач** — опишите задачи текстом, LLM сформирует JSON
 - **Интерактивный чат** с историей сообщений и редактируемым системным промптом
 - **Массовое создание задач** в Jira через JSON
 - Поддержка полей: summary, description, issuetype, priority, labels, assignee, epic_link, components
@@ -46,7 +46,20 @@ poetry shell
 ```env
 JIRA_API_TOKEN=ваш_токен
 JIRA_BASE_URL=https://jira.example.com
+
+# local | cloud
+LLM_MODE=local
+LLM_CHAT_MODEL=gemma3:1b
+
+# cloud mode (Groq)
 GROQ_API_KEY=ваш_groq_api_key
+GROQ_CHAT_MODEL=llama-3.1-8b-instant
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo
+
+# local mode (Ollama)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_CHAT_MODEL=gemma3:1b
+OLLAMA_AUTO_PULL=true
 ```
 
 ### Получение API токена Jira
@@ -63,11 +76,57 @@ GROQ_API_KEY=ваш_groq_api_key
 
 ## 🚀 Запуск
 
+### Локально через Poetry
+
 ```bash
 streamlit run app.py
 ```
 
 Приложение откроется в браузере по адресу `http://localhost:8501`
+
+### Через Docker Compose
+
+1. Скопируйте пример конфига:
+
+```bash
+cp .env.example .env
+```
+
+2. Выберите режим:
+
+- `LLM_MODE=local` — запросы идут в локальную `Ollama`
+- `LLM_MODE=cloud` — запросы идут в `Groq`
+
+3. Запустите контейнеры:
+
+```bash
+docker compose up --build
+```
+
+Приложение будет доступно на `http://localhost:8501`, а Ollama на `http://localhost:11434`.
+
+### Как работает локальный режим
+
+- В `docker-compose.yml` уже добавлен отдельный сервис `ollama`
+- Модель задаётся через `LLM_CHAT_MODEL` или `OLLAMA_CHAT_MODEL`
+- Если `OLLAMA_AUTO_PULL=true`, приложение попытается автоматически скачать модель при первом запросе
+- Для первого запуска подойдут модели вроде `gemma3:1b`, `llama3.1:8b`, `mistral:7b`
+
+### Как переключиться в облако
+
+Измените `.env`:
+
+```env
+LLM_MODE=cloud
+LLM_CHAT_MODEL=llama-3.1-8b-instant
+GROQ_API_KEY=your_key
+```
+
+После этого перезапустите:
+
+```bash
+docker compose up --build
+```
 
 ## 📁 Структура проекта
 
@@ -75,7 +134,9 @@ streamlit run app.py
 sprint-analizer/
 ├── app.py                 # Точка входа: sidebar, CSS, роутинг
 ├── jira_client.py         # Клиент для работы с Jira API
-├── groq_client.py         # Обёртка Groq API для генерации задач
+├── groq_client.py         # LLM-клиент: Groq или Ollama
+├── Dockerfile             # Образ приложения
+├── docker-compose.yml     # Приложение + Ollama
 ├── pages/
 │   ├── __init__.py
 │   ├── analysis.py        # Страница анализа спринтов
@@ -111,7 +172,7 @@ sprint-analizer/
 1. Переключитесь на **«Создание задач»** в меню
 2. **Через AI-чат** (правая колонка):
    - Опишите задачи текстом в чате
-   - Groq сгенерирует JSON автоматически
+   - Активная модель сгенерирует JSON автоматически
    - Нажмите **«Вставить в редактор»** для переноса в редактор
    - При необходимости уточните задачи в чате — AI учитывает историю
 3. **Вручную** (левая колонка):
@@ -153,3 +214,8 @@ sprint-analizer/
 ## 📝 Лицензия
 
 MIT
+
+
+Костя глянь эту, если там на бэк, то поменяй компонент и на Рому кинь https://jira.aetalon.tech/browse/SO-4869 
+Рома, надо выяснить почему на ОрВД не работает https://jira.aetalon.tech/browse/SO-4871
+Тут проблема на фронте, надо разобраться и корректно выводить ошибки https://jira.aetalon.tech/browse/SO-4872

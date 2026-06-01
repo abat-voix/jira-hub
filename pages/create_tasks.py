@@ -1,11 +1,17 @@
 """
-Страница создания задач с Groq-чатом
+Страница создания задач с AI-чатом.
 """
 import json
 import streamlit as st
 import pandas as pd
 from jira_client import JiraClient, JiraTaskCreator
-from groq_client import generate_tasks_json, PROMPT_FILE
+from groq_client import (
+    PROMPT_FILE,
+    generate_tasks_json,
+    get_backend_label,
+    supports_audio_transcription,
+    transcribe_audio,
+)
 
 
 def _init_chat_state():
@@ -25,10 +31,11 @@ def _load_system_prompt() -> str:
         return "Ты помощник для создания задач в Jira. Возвращай JSON."
 
 
-def _render_groq_chat(container):
-    """Groq-чат для генерации задач из текста"""
+def _render_ai_chat(container):
+    """AI-чат для генерации задач из текста."""
     with container:
         st.markdown("### 🤖 AI-чат")
+        st.caption(f"Активный LLM: {get_backend_label()}")
 
         _init_chat_state()
 
@@ -52,7 +59,48 @@ def _render_groq_chat(container):
                     else:
                         st.markdown(msg["content"])
 
-        # Поле ввода + кнопка отправки
+        if supports_audio_transcription():
+            audio_value = st.audio_input("🎤 Голосовой ввод", key="voice_input")
+
+            if audio_value is not None:
+                # Проверяем не обработали ли уже этот аудиофайл
+                audio_id = id(audio_value)
+                if st.session_state.get('_last_audio_id') != audio_id:
+                    with st.spinner("Распознавание речи..."):
+                        audio_bytes = audio_value.read()
+                        result = transcribe_audio(audio_bytes)
+
+                    if result["success"]:
+                        transcribed = result["text"]
+                        st.session_state._last_audio_id = audio_id
+                        st.session_state._transcribed_text = transcribed
+                    else:
+                        st.error(f"Ошибка распознавания: {result['error']}")
+        else:
+            st.caption("Голосовой ввод отключён: локальный режим использует Ollama без Whisper.")
+
+        # Показываем распознанный текст если есть
+        transcribed_text = st.session_state.get('_transcribed_text', '')
+        if transcribed_text:
+            st.info(f"🎤 Распознано: {transcribed_text}")
+            if st.button("📨 Отправить голосовое", use_container_width=True):
+                st.session_state.chat_messages.append({"role": "user", "content": transcribed_text})
+                st.session_state._transcribed_text = ''
+
+                with st.spinner("Генерация задач..."):
+                    messages = [{"role": "system", "content": system_prompt}]
+                    messages.extend(st.session_state.chat_messages)
+                    result = generate_tasks_json(messages)
+
+                if result["success"]:
+                    st.session_state.chat_messages.append({"role": "assistant", "content": result["content"]})
+                    st.session_state.generated_json = result["content"]
+                else:
+                    st.session_state.chat_messages.append({"role": "assistant", "content": f"Ошибка: {result['error']}"})
+
+                st.rerun()
+
+        # Текстовый ввод + кнопка отправки
         user_input = st.text_area(
             "Сообщение",
             placeholder="Опишите задачи текстом...",
@@ -68,6 +116,7 @@ def _render_groq_chat(container):
             if st.button("🗑️ Очистить чат", use_container_width=True):
                 st.session_state.chat_messages = []
                 st.session_state.generated_json = ""
+                st.session_state._transcribed_text = ''
                 st.rerun()
 
         if send_clicked and user_input.strip():
@@ -187,4 +236,4 @@ def render_task_creator():
     col_editor, col_chat = st.columns([1, 1])
 
     _render_task_editor(col_editor)
-    _render_groq_chat(col_chat)
+    _render_ai_chat(col_chat)
