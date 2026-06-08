@@ -106,7 +106,7 @@ class JiraClient:
             for board in boards:
                 sprints_response = self.session.get(
                     f'{self.base_url}/rest/agile/1.0/board/{board["id"]}/sprint',
-                    params={'maxResults': 100, 'state': 'active'}
+                    params={'maxResults': 100, 'state': 'active,future'}
                 )
 
                 if sprints_response.status_code == 200:
@@ -183,6 +183,38 @@ class JiraClient:
         except Exception as e:
             print(f"Ошибка при получении задач спринта: {e}")
             return None
+
+    def move_issues_to_sprint(self, sprint_id: int, issue_keys: list[str]) -> dict:
+        """Переместить задачи в указанный спринт.
+        Возвращает {'success': bool, 'moved': [...], 'error': str}"""
+        if not issue_keys:
+            return {'success': False, 'moved': [], 'error': 'Пустой список задач'}
+        try:
+            response = self.session.post(
+                f'{self.base_url}/rest/agile/1.0/sprint/{sprint_id}/issue',
+                json={'issues': issue_keys}
+            )
+            if response.status_code in (200, 204):
+                return {'success': True, 'moved': issue_keys, 'error': ''}
+            return {'success': False, 'moved': [], 'error': f"{response.status_code}: {response.text}"}
+        except Exception as e:
+            return {'success': False, 'moved': [], 'error': str(e)}
+
+    def move_issues_to_backlog(self, issue_keys: list[str]) -> dict:
+        """Переместить задачи в бэклог (убрать из спринта).
+        Возвращает {'success': bool, 'moved': [...], 'error': str}"""
+        if not issue_keys:
+            return {'success': False, 'moved': [], 'error': 'Пустой список задач'}
+        try:
+            response = self.session.post(
+                f'{self.base_url}/rest/agile/1.0/backlog/issue',
+                json={'issues': issue_keys}
+            )
+            if response.status_code in (200, 204):
+                return {'success': True, 'moved': issue_keys, 'error': ''}
+            return {'success': False, 'moved': [], 'error': f"{response.status_code}: {response.text}"}
+        except Exception as e:
+            return {'success': False, 'moved': [], 'error': str(e)}
 
     def _format_issues(self, issues: list) -> list[Issue]:
         """Форматирование задач из API ответа"""

@@ -270,7 +270,7 @@ def render_all_issues_table(sprint_data: SprintData):
                 and i.issue_type in type_filter and comp_matches(i)]
 
     rows = [{
-        'Ключ': i.key, 'Тип': i.issue_type, 'Название': i.summary,
+        'Ключ': i.url, 'Тип': i.issue_type, 'Название': i.summary,
         'Статус': i.status, 'Исполнитель': i.assignee,
         'Компонент': ', '.join(i.components) if i.components else '—',
         'Оценка (ч)': i.estimated_hours or 0, 'Залогировано (ч)': i.spent_hours or 0,
@@ -278,18 +278,114 @@ def render_all_issues_table(sprint_data: SprintData):
     } for i in filtered]
 
     df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True, column_config={
-        'Ключ': st.column_config.TextColumn('Ключ', width='small'),
-        'Тип': st.column_config.TextColumn('Тип', width='small'),
-        'Название': st.column_config.TextColumn('Название', width='large'),
-        'Статус': st.column_config.TextColumn('Статус', width='medium'),
-        'Исполнитель': st.column_config.TextColumn('Исполнитель', width='medium'),
-        'Компонент': st.column_config.TextColumn('Компонент', width='medium'),
-        'Оценка (ч)': st.column_config.NumberColumn('Оценка', format="%.0f", width='small'),
-        'Залогировано (ч)': st.column_config.NumberColumn('Залог.', format="%.1f", width='small'),
-        'Приоритет': st.column_config.TextColumn('Приоритет', width='small'),
-    })
+    event = st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="multi-row",
+        on_select="rerun",
+        key="all_issues_table",
+        column_config={
+            'Ключ': st.column_config.LinkColumn(
+                'Ключ', width='small', display_text=r".*/browse/(.+)$"
+            ),
+            'Тип': st.column_config.TextColumn('Тип', width='small'),
+            'Название': st.column_config.TextColumn('Название', width='large'),
+            'Статус': st.column_config.TextColumn('Статус', width='medium'),
+            'Исполнитель': st.column_config.TextColumn('Исполнитель', width='medium'),
+            'Компонент': st.column_config.TextColumn('Компонент', width='medium'),
+            'Оценка (ч)': st.column_config.NumberColumn('Оценка', format="%.0f", width='small'),
+            'Залогировано (ч)': st.column_config.NumberColumn('Залог.', format="%.1f", width='small'),
+            'Приоритет': st.column_config.TextColumn('Приоритет', width='small'),
+        },
+    )
     st.caption(f"Показано {len(filtered)} из {len(issues)} задач")
+
+    selected_rows = event.selection.rows if event and event.selection else []
+    if selected_rows:
+        selected_df = df.iloc[selected_rows]
+        sum_estimated = selected_df['Оценка (ч)'].sum()
+        sum_spent = selected_df['Залогировано (ч)'].sum()
+        m1, m2, m3 = st.columns(3)
+        m1.metric("☑️ Выбрано задач", len(selected_rows))
+        m2.metric("⏱️ Сумма оценки", f"{sum_estimated:.0f} ч")
+        m3.metric("📝 Сумма залогированного", f"{sum_spent:.1f} ч")
+
+        selected_keys = [url.rsplit('/', 1)[-1] for url in selected_df['Ключ'].tolist()]
+        _render_move_issues_block(sprint_data, selected_keys)
+    else:
+        st.caption("☑️ Отметьте задачи в таблице — снизу появится сумма «Оценки» и «Залогированного»")
+
+
+def _render_move_issues_block(sprint_data: SprintData, selected_keys: list[str]):
+    """Блок перемещения выбранных задач в другой спринт или в бэклог."""
+    client: JiraClient = st.session_state.jira_client
+    current_sprint_name = sprint_data.sprint_info.name if sprint_data.sprint_info else None
+
+    with st.expander(f"🔄 Переместить выбранные задачи ({len(selected_keys)})", expanded=False):
+        pending = st.session_state.get('move_pending')
+
+        if not pending:
+            with st.spinner("Загрузка списка спринтов..."):
+                sprints = client.get_all_sprints()
+
+            BACKLOG = '— Бэклог —'
+            options = [BACKLOG] + [
+                s.name for s in sprints if s.name != current_sprint_name
+            ]
+            target_map = {BACKLOG: ('backlog', None)}
+            for s in sprints:
+                if s.name != current_sprint_name:
+                    target_map[s.name] = ('sprint', s.id)
+
+            col_sel, col_btn = st.columns([3, 1])
+            with col_sel:
+                target_label = st.selectbox(
+                    "Куда переместить",
+                    options=options,
+                    key='move_target_select',
+                    label_visibility='collapsed'
+                )
+            with col_btn:
+                if st.button("Подготовить", use_container_width=True, key='move_prepare'):
+                    kind, sprint_id = target_map[target_label]
+                    st.session_state.move_pending = {
+                        'keys': selected_keys,
+                        'kind': kind,
+                        'sprint_id': sprint_id,
+                        'label': target_label,
+                    }
+                    st.rerun()
+        else:
+            st.warning(
+                f"Переместить **{len(pending['keys'])}** задач "
+                f"({', '.join(pending['keys'][:5])}{'…' if len(pending['keys']) > 5 else ''}) "
+                f"в **{pending['label']}**?"
+            )
+            confirm = st.checkbox("Подтверждаю перемещение", key='move_confirm')
+            col_go, col_cancel = st.columns([1, 1])
+            with col_go:
+                if st.button("Переместить", disabled=not confirm, type='primary',
+                             use_container_width=True, key='move_go'):
+                    if pending['kind'] == 'backlog':
+                        result = client.move_issues_to_backlog(pending['keys'])
+                    else:
+                        result = client.move_issues_to_sprint(pending['sprint_id'], pending['keys'])
+
+                    if result['success']:
+                        st.toast(f"✅ Перемещено {len(result['moved'])} задач в «{pending['label']}»", icon='✅')
+                        del st.session_state.move_pending
+                        if current_sprint_name:
+                            refreshed = client.get_sprint_issues(current_sprint_name)
+                            if refreshed:
+                                st.session_state.sprint_data = refreshed
+                        st.rerun()
+                    else:
+                        st.error(f"Ошибка перемещения: {result['error']}")
+            with col_cancel:
+                if st.button("Отмена", use_container_width=True, key='move_cancel'):
+                    del st.session_state.move_pending
+                    st.rerun()
 
 
 def render_summary_table(sprint_data: SprintData):
