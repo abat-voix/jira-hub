@@ -9,6 +9,7 @@ from datetime import datetime
 from jira_client import JiraClient
 from pages.analysis import render_analysis_page
 from pages.create_tasks import render_task_creator
+from pages.transcribe import render_transcribe_page
 
 load_dotenv()
 API_TOKEN = os.getenv("JIRA_API_TOKEN")
@@ -84,10 +85,15 @@ def render_sidebar():
     st.sidebar.markdown("### 📑 Меню")
     page = st.sidebar.radio(
         "Навигация",
-        options=["🏃 Анализ спринта", "➕ Создание задач"],
+        options=["🏃 Анализ спринта", "➕ Создание задач", "📝 Аудио → текст"],
         label_visibility="collapsed"
     )
-    st.session_state.page = "analysis" if "Анализ" in page else "create"
+    if "Анализ" in page:
+        st.session_state.page = "analysis"
+    elif "Создание" in page:
+        st.session_state.page = "create"
+    else:
+        st.session_state.page = "transcribe"
 
     st.sidebar.markdown("---")
 
@@ -130,8 +136,10 @@ def main():
 
     if st.session_state.page == "analysis":
         render_analysis_page()
-    else:
+    elif st.session_state.page == "create":
         render_task_creator()
+    else:
+        render_transcribe_page()
 
 
 if __name__ == "__main__":

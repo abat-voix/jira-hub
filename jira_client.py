@@ -38,6 +38,7 @@ class Issue:
     parent_key: Optional[str] = None
     parent_summary: Optional[str] = None
     url: str = ""
+    in_progress_since: Optional[str] = None
 
 
 @dataclass
@@ -146,6 +147,7 @@ class JiraClient:
                 'jql': jql,
                 'maxResults': 100,
                 'startAt': 0,
+                'expand': 'changelog',
                 'fields': 'summary,status,assignee,priority,issuetype,created,updated,'
                           'description,labels,components,timetracking,timeoriginalestimate,'
                           'timespent,parent'
@@ -216,6 +218,23 @@ class JiraClient:
         except Exception as e:
             return {'success': False, 'moved': [], 'error': str(e)}
 
+    @staticmethod
+    def _extract_in_progress_since(issue: dict, current_status: str) -> Optional[str]:
+        """Дата последнего перехода задачи в статус «В работе» / «In Progress».
+        Если переходов нет, а задача сейчас в этом статусе — возвращает дату создания."""
+        target_statuses = {'В работе', 'In Progress'}
+        latest = None
+        histories = (issue.get('changelog') or {}).get('histories', [])
+        for h in histories:
+            for item in h.get('items', []):
+                if item.get('field') == 'status' and item.get('toString') in target_statuses:
+                    created_at = h.get('created')
+                    if created_at and (latest is None or created_at > latest):
+                        latest = created_at
+        if latest is None and current_status in target_statuses:
+            latest = issue.get('fields', {}).get('created')
+        return latest
+
     def _format_issues(self, issues: list) -> list[Issue]:
         """Форматирование задач из API ответа"""
         formatted = []
@@ -245,11 +264,14 @@ class JiraClient:
                 if 'fields' in fields['parent']:
                     parent_summary = fields['parent']['fields'].get('summary')
 
+            status_name = fields['status']['name']
+            in_progress_since = self._extract_in_progress_since(issue, status_name)
+
             formatted.append(Issue(
                 key=issue['key'],
                 summary=fields['summary'],
                 issue_type=fields['issuetype']['name'],
-                status=fields['status']['name'],
+                status=status_name,
                 priority=fields.get('priority', {}).get('name',
                                                         'None') if fields.get(
                     'priority') else 'None',
@@ -267,7 +289,8 @@ class JiraClient:
                             fields.get('components', [])],
                 parent_key=parent_key,
                 parent_summary=parent_summary,
-                url=f"{self.base_url}/browse/{issue['key']}"
+                url=f"{self.base_url}/browse/{issue['key']}",
+                in_progress_since=in_progress_since
             ))
 
         return formatted

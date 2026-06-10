@@ -45,8 +45,8 @@ def get_backend_label() -> str:
 
 
 def supports_audio_transcription() -> bool:
-    """Локальный режим пока не поддерживает распознавание аудио."""
-    return get_llm_mode() == "cloud"
+    """Возвращает True, если доступна облачная транскрипция через Groq Whisper."""
+    return get_llm_mode() == "cloud" and bool(os.getenv("GROQ_API_KEY", "").strip())
 
 
 def _get_ollama_base_url() -> str:

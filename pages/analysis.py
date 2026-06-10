@@ -241,6 +241,24 @@ def render_assignee_stats(sprint_data: SprintData):
     })
 
 
+def _format_in_progress_since(iso_str: str) -> str:
+    """ISO timestamp ('2026-06-08T14:30:00.000+0300') → 'DD.MM.YYYY HH:MM'."""
+    if not iso_str:
+        return ''
+    try:
+        date_part, _, time_part = iso_str.partition('T')
+        for i, ch in enumerate(time_part):
+            if ch in '+-':
+                time_part = time_part[:i]
+                break
+        time_part = time_part.split('.')[0]
+        hh, mm = time_part.split(':')[:2]
+        yyyy, mo, dd = date_part.split('-')
+        return f"{dd}.{mo}.{yyyy} {hh}:{mm}"
+    except Exception:
+        return ''
+
+
 def render_all_issues_table(sprint_data: SprintData):
     st.markdown("### 📁 Все задачи")
     issues = sprint_data.issues
@@ -269,9 +287,18 @@ def render_all_issues_table(sprint_data: SprintData):
                 if i.status in status_filter and i.assignee in assignee_filter
                 and i.issue_type in type_filter and comp_matches(i)]
 
+    in_progress_statuses = {'В работе', 'In Progress'}
+
+    def status_display(issue):
+        if issue.status in in_progress_statuses and issue.in_progress_since:
+            formatted = _format_in_progress_since(issue.in_progress_since)
+            if formatted:
+                return f"{issue.status} (с {formatted})"
+        return issue.status
+
     rows = [{
         'Ключ': i.url, 'Тип': i.issue_type, 'Название': i.summary,
-        'Статус': i.status, 'Исполнитель': i.assignee,
+        'Статус': status_display(i), 'Исполнитель': i.assignee,
         'Компонент': ', '.join(i.components) if i.components else '—',
         'Оценка (ч)': i.estimated_hours or 0, 'Залогировано (ч)': i.spent_hours or 0,
         'Приоритет': i.priority
@@ -291,7 +318,7 @@ def render_all_issues_table(sprint_data: SprintData):
             ),
             'Тип': st.column_config.TextColumn('Тип', width='small'),
             'Название': st.column_config.TextColumn('Название', width='large'),
-            'Статус': st.column_config.TextColumn('Статус', width='medium'),
+            'Статус': st.column_config.TextColumn('Статус', width='large'),
             'Исполнитель': st.column_config.TextColumn('Исполнитель', width='medium'),
             'Компонент': st.column_config.TextColumn('Компонент', width='medium'),
             'Оценка (ч)': st.column_config.NumberColumn('Оценка', format="%.0f", width='small'),
