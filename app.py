@@ -71,30 +71,12 @@ def init_session_state():
         st.session_state.sprint_data = None
     if 'connected' not in st.session_state:
         st.session_state.connected = False
-    if 'page' not in st.session_state:
-        st.session_state.page = "analysis"
 
 
 def render_sidebar():
-    """Сайдбар: меню навигации + подключение/отключение"""
+    """Сайдбар: подключение/отключение Jira"""
 
     st.sidebar.markdown("## 🏃 Sprint Analyzer")
-    st.sidebar.markdown("---")
-
-    # --- Навигация ---
-    st.sidebar.markdown("### 📑 Меню")
-    page = st.sidebar.radio(
-        "Навигация",
-        options=["🏃 Анализ спринта", "➕ Создание задач", "📝 Аудио → текст"],
-        label_visibility="collapsed"
-    )
-    if "Анализ" in page:
-        st.session_state.page = "analysis"
-    elif "Создание" in page:
-        st.session_state.page = "create"
-    else:
-        st.session_state.page = "transcribe"
-
     st.sidebar.markdown("---")
 
     # --- Подключение / Отключение ---
@@ -133,13 +115,17 @@ def render_sidebar():
 def main():
     init_session_state()
     render_sidebar()
-
-    if st.session_state.page == "analysis":
-        render_analysis_page()
-    elif st.session_state.page == "create":
-        render_task_creator()
-    else:
-        render_transcribe_page()
+    navigation = st.navigation(
+        {
+            "Меню": [
+                st.Page(render_analysis_page, title="Анализ спринта", icon="🏃", default=True),
+                st.Page(render_task_creator, title="Создание задач", icon="➕"),
+                st.Page(render_transcribe_page, title="Аудио → текст", icon="📝"),
+            ]
+        },
+        position="sidebar",
+    )
+    navigation.run()
 
 
 if __name__ == "__main__":
