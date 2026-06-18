@@ -13,7 +13,7 @@ _client = None
 _ensured_ollama_models: set[str] = set()
 
 DEFAULT_MODE = "cloud"
-DEFAULT_GROQ_CHAT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_GROQ_CHAT_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 DEFAULT_OLLAMA_CHAT_MODEL = "gemma3:1b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
@@ -105,7 +105,7 @@ def _generate_with_ollama(messages: list[dict]) -> dict:
                 "messages": messages,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.3},
+                "options": {"temperature": 0.0},
             },
             timeout=600,
         )
@@ -140,7 +140,7 @@ def generate_tasks_json(messages: list[dict]) -> dict:
             model=get_chat_model(),
             messages=messages,
             response_format={"type": "json_object"},
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         parsed = json.loads(content)
