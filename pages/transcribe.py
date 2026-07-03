@@ -10,10 +10,14 @@ import streamlit.components.v1 as components
 
 from audio_utils import extract_audio_from_webm
 from groq_client import supports_audio_transcription, transcribe_audio
+from openai_client import (
+    supports_openai_transcription,
+    transcribe_audio as openai_transcribe_audio,
+)
 
 SUPPORTED_AUDIO_TYPES = ["m4a", "mp3", "wav", "ogg", "flac", "webm"]
 WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large"]
-GROQ_FILE_LIMIT_BYTES = 25 * 1024 * 1024
+CLOUD_FILE_LIMIT_BYTES = 25 * 1024 * 1024
 
 
 def _has_local_whisper() -> bool:
@@ -58,43 +62,47 @@ def _render_copy_button(text: str) -> None:
 
 def render_transcribe_page():
     st.markdown("## 📝 Аудио → текст")
-    st.caption("Транскрипция одного аудиофайла через Groq Whisper или локальный openai-whisper.")
+    st.caption("Транскрипция одного аудиофайла через Groq Whisper, OpenAI Whisper или локальный openai-whisper.")
 
     groq_available = supports_audio_transcription()
+    openai_available = supports_openai_transcription()
     local_available = _has_local_whisper()
 
-    if not groq_available and not local_available:
+    if not groq_available and not openai_available and not local_available:
         st.info(
-            "Сейчас ни один движок не доступен. Для облачного режима включите `LLM_MODE=cloud` "
-            "и задайте `GROQ_API_KEY`. Для локального режима установите `openai-whisper` и `ffmpeg`."
+            "Сейчас ни один движок не доступен. Для Groq включите `LLM_MODE=cloud` и задайте `GROQ_API_KEY`. "
+            "Для OpenAI задайте `OPENAI_API_KEY`. Для локального режима установите `openai-whisper` и `ffmpeg`."
         )
         st.code("poetry add openai-whisper\nbrew install ffmpeg", language="bash")
         return
 
-    if "transcribe_engine" not in st.session_state:
-        st.session_state.transcribe_engine = "groq" if groq_available else "local"
+    engine_options = ["groq", "openai", "local"]
+    availability = {"groq": groq_available, "openai": openai_available, "local": local_available}
 
-    if st.session_state.transcribe_engine == "groq" and not groq_available:
-        st.session_state.transcribe_engine = "local"
-    if st.session_state.transcribe_engine == "local" and not local_available:
-        st.session_state.transcribe_engine = "groq"
+    if "transcribe_engine" not in st.session_state or not availability[st.session_state.transcribe_engine]:
+        st.session_state.transcribe_engine = next(e for e in engine_options if availability[e])
 
     st.radio(
         "Движок",
-        options=["groq", "local"],
-        format_func=lambda value: "Groq (быстро, облако)" if value == "groq" else "Локально (openai-whisper)",
+        options=engine_options,
+        format_func=lambda value: {
+            "groq": "Groq (быстро, облако)",
+            "openai": "OpenAI Whisper (облако)",
+            "local": "Локально (openai-whisper)",
+        }[value],
         horizontal=True,
-        disabled=not (groq_available and local_available),
+        disabled=sum(availability.values()) < 2,
         key="transcribe_engine",
         captions=[
             None if groq_available else "Недоступно: нужен cloud-режим и `GROQ_API_KEY`.",
+            None if openai_available else "Недоступно: задайте `OPENAI_API_KEY`.",
             None if local_available else "Недоступно: пакет `openai-whisper` не установлен.",
         ],
     )
 
     engine = st.session_state.transcribe_engine
 
-    if engine == "groq":
+    if engine in ("groq", "openai"):
         st.caption("Язык: `ru`")
         model_size = None
     else:
@@ -113,8 +121,8 @@ def render_transcribe_page():
         key="transcribe_upload",
     )
 
-    if engine == "groq" and audio_file is not None and audio_file.size > GROQ_FILE_LIMIT_BYTES:
-        st.warning("Файл больше 25 MB. Groq Whisper обычно принимает файлы до 25 MB, запрос может завершиться ошибкой.")
+    if engine in ("groq", "openai") and audio_file is not None and audio_file.size > CLOUD_FILE_LIMIT_BYTES:
+        st.warning("Файл больше 25 MB. Облачные Whisper-API обычно принимают файлы до 25 MB, запрос может завершиться ошибкой.")
 
     transcribe_clicked = st.button(
         "Транскрибировать",
@@ -145,6 +153,13 @@ def render_transcribe_page():
             if engine == "groq":
                 with st.spinner("Отправляю файл в Groq Whisper..."):
                     result = transcribe_audio(audio_bytes, filename=audio_name)
+                if not result["success"]:
+                    st.error(f"Ошибка транскрипции: {result['error']}")
+                    return
+                text = result["text"]
+            elif engine == "openai":
+                with st.spinner("Отправляю файл в OpenAI Whisper..."):
+                    result = openai_transcribe_audio(audio_bytes, filename=audio_name)
                 if not result["success"]:
                     st.error(f"Ошибка транскрипции: {result['error']}")
                     return
